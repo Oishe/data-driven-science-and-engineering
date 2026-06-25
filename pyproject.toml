@@ -1,21 +1,38 @@
 [project]
 name = "sparsity"
 version = "0.1.0"
-description = "Sparsity Visualization"
+description = "Sparsity Exploration"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "marimo[recommended]>=0.23.10",
-    "numpy>=2.5.0",
-    "plotly>=6.8.0",
+  "bokeh>=3.9.1",
+  "marimo>=0.23.10",
+  "numpy>=2.5.0",
+  "pillow>=12.2.0",
+  "pywavelets>=1.9.0",
+  "scipy>=1.18.0",
 ]
 
 [dependency-groups]
 dev = [
-  "ty>=0.0.51",
+  "marimo[lsp,recommended]>=0.23.10",
+  "mcp>=1",
   "pydantic>=2",
   "pytest>=9.1.1",
   "python-lsp-ruff>=2.3.1",
   "python-lsp-server>=1.14.0",
+  "ruff>=0.15.18",
   "websockets>=16.0",
 ]
+extras = [
+  "matplotlib>=3.11.0",
+  "pandas>=3.0.3",
+  "pygwalker>=0.5.0.1",
+  "vegafusion>=2.0.3",
+  "vl-convert-python>=1.9.0.post1",
+]
+[tool.uv]
+default-groups = ["dev", "extras"]
+
+[tool.marimo.runtime]
+output_max_bytes = 10_000_000
