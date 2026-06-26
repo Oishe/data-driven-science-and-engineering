@@ -13,7 +13,7 @@
 import marimo
 
 __generated_with = "0.23.10"
-app = marimo.App(width="medium")
+app = marimo.App(width="medium", layout_file="layouts/app.grid.json")
 
 
 @app.cell(hide_code=True)
@@ -25,7 +25,7 @@ def title(mo):
 
 
 @app.cell
-def cell_marimo():
+def _():
     import marimo as mo
 
     return (mo,)
@@ -46,7 +46,7 @@ def cell_imports():
 
 
 @app.cell
-def _(mo):
+def cell_image_ui(mo):
     url_input = mo.ui.text(
         value="https://picsum.photos/1500/1000",
         kind="url",
@@ -68,7 +68,7 @@ def _(mo):
 
 
 @app.cell
-def cell_get_image(Image, io, load_image, mo, np, url_input, urllib):
+def cell_get_image(Image, io, load_image, np, url_input, urllib):
     load_image
 
     def get_image(url):
@@ -78,13 +78,23 @@ def cell_get_image(Image, io, load_image, mo, np, url_input, urllib):
     image = get_image(url_input.value)
     gray = np.asarray(image.convert("L"), dtype=np.float32) / 255.0
     # rgb = np.asarray(image, dtype=np.float32) / 255.0
-
-    mo.image(image)
-    return (gray,)
+    return gray, image
 
 
 @app.cell
-def cell_transform_choice(dctn, fft2, idctn, ifft2, mo, pywt):
+def cell_plot_image(image, mo):
+    mo.image(image)
+    return
+
+
+@app.cell
+def _(gray, mo):
+    mo.image(gray)
+    return
+
+
+@app.cell
+def cell_transform_options(dctn, fft2, fftshift, idctn, ifft2, mo, np, pywt):
     def wavelet_pair(wavelet="db4", mode="periodization"):
         _slices = {}  # forward stashes the coeff layout for backward to reuse
 
@@ -107,17 +117,48 @@ def cell_transform_choice(dctn, fft2, idctn, ifft2, mo, pywt):
         "DCT": (dctn, idctn),
         "DWT": wavelet_pair(),
     }
+
+    def plot_transform_space(coeffs, choice):
+        # Todo: rename coeffs
+        # center the FFT spectrum for display
+        if choice == "FFT":
+            coeffs = fftshift(coeffs)
+        coeffs_log = np.log1p(coeffs)
+        vmin, vmax = np.percentile(coeffs_log, [0.1, 99.9])
+        return mo.image(coeffs_log, vmin=vmin, vmax=vmax)
+
+    return plot_transform_space, transforms
+
+
+@app.cell
+def cell_transform_ui(mo, transforms):
     transform_choice = mo.ui.dropdown(
         options=list(transforms),
         value="FFT",
         label="Transform",
     )
     transform_choice
-    return transform_choice, transforms
+    return (transform_choice,)
 
 
 @app.cell
-def cell_keep_pct(mo, np):
+def cell_transform_image(gray, np, transform_choice, transforms):
+    forward, backward = transforms[transform_choice.value]
+
+    # Transform into a sparse coefficient space
+    y = forward(gray)
+    y_mag = np.abs(y)
+    return backward, y, y_mag
+
+
+@app.cell
+def plot_transform(plot_transform_space, transform_choice, y_mag):
+    plot_transform_space(y_mag, transform_choice.value)
+    return
+
+
+@app.cell
+def cell_keep_pct_ui(mo, np):
     keep_pct = mo.ui.slider(
         steps=np.unique([np.arange(1, 11) / scale for scale in [10, 1, 0.1]]).tolist(),
         value=5,
@@ -131,30 +172,36 @@ def cell_keep_pct(mo, np):
 
 
 @app.cell
-def cell_forward(gray, np, transform_choice, transforms):
-    t_choice = transform_choice.value
-    forward, backward = transforms[t_choice]
-
-    # Transform into a sparse coefficient space
-    y = forward(gray)
-    y_mag = np.abs(y)
-    return backward, t_choice, y, y_mag
-
-
-@app.cell
-def cell_sparse(backward, keep_pct, np, y, y_mag):
+def cell_threshold(keep_pct, np, y, y_mag):
     # Keep only the largest-magnitude coefficients
     threshold = np.percentile(y_mag, 100 - keep_pct.value)
     y_sparse = np.where(y_mag >= threshold, y, 0.0)
-
-    # Reconstruct the image from the reduced coefficient set
-    # (.real: the inverse FFT returns complex; DCT is already real)
-    reconstruct = backward(y_sparse).real
-    return reconstruct, threshold, y_sparse
+    y_sparse_mag = np.where(y_mag >= threshold, y_mag, 0.0)
+    return threshold, y_sparse, y_sparse_mag
 
 
 @app.cell
-def cell_dist_data(np, y_mag):
+def cell_plot_threshold(plot_transform_space, transform_choice, y_sparse_mag):
+    plot_transform_space(y_sparse_mag, transform_choice.value)
+    return
+
+
+@app.cell
+def cell_inverse_transform(backward, y_sparse):
+    # Reconstruct the image from the reduced coefficient set
+    # (.real: the inverse FFT returns complex; DCT is already real)
+    reconstruct = backward(y_sparse).real
+    return (reconstruct,)
+
+
+@app.cell
+def cell_plot_reconstruction(mo, reconstruct):
+    mo.image(reconstruct)
+    return
+
+
+@app.cell
+def cell_sort_mags(np, y_mag):
     # Sorted, downsampled coefficient distribution for the plot.
     # ~1.5M sorted magnitudes -> ~3k log-spaced ranks (keeps head detail on log-y).
     _mags = np.sort(y_mag.ravel())[::-1]
@@ -166,7 +213,7 @@ def cell_dist_data(np, y_mag):
 
 
 @app.cell
-def cell_plot_compare(
+def cell_plot_distribution(
     bk,
     dist_mag,
     dist_rank,
@@ -188,42 +235,6 @@ def cell_plot_compare(
     p.hspan(threshold, line_dash="dashed", line_color="red")
     p.vspan(dist_keep_count, line_dash="dashed", line_color="green")
     mo.as_html(p)
-    return
-
-
-@app.cell
-def cell_space_original(fftshift, mo, np, t_choice, y, y_sparse):
-    def image_transform_space(coeffs):
-        # center the FFT spectrum for display
-        if t_choice == "FFT":
-            coeffs = fftshift(coeffs)
-        coeffs_log = np.log1p(np.abs(coeffs))
-        vmin, vmax = np.percentile(coeffs_log, [0.1, 99.9])
-        return mo.image(coeffs_log, vmin=vmin, vmax=vmax)
-
-    original = image_transform_space(y)
-    sparse = image_transform_space(y_sparse)
-    return original, sparse
-
-
-@app.cell
-def cell_view_all(gray, mo, original, reconstruct, sparse):
-    mo.vstack(
-        [
-            mo.hstack(
-                [mo.image(gray), original],
-                align="center",
-                widths=[1, 1],
-            ),
-            mo.hstack(
-                [mo.image(reconstruct), sparse],
-                align="center",
-                widths=[1, 1],
-            ),
-        ],
-        align="stretch",
-        gap=2,
-    )
     return
 
 
