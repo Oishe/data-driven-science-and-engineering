@@ -13,33 +13,41 @@
 import marimo
 
 __generated_with = "0.23.10"
-app = marimo.App()
+app = marimo.App(width="medium")
 
 with app.setup:
+    import copy
     import io
     import urllib.request
 
-    from bokeh.layouts import column
-    from bokeh.models import Range1d
     import bokeh.plotting as bk
-    import numpy as np
-    from PIL import Image
-    import pywt
-    from scipy.fft import dctn, idctn, fft2, ifft2, fftshift
-
     import marimo as mo
+    import numpy as np
+    import pywt
+    from bokeh.layouts import column
+    from bokeh.models.ranges import Range1d
+    from PIL import Image
+    from scipy.fft import dctn, fft2, fftshift, idctn, ifft2, ifftshift
 
 
 @app.cell(hide_code=True)
-def title():
+def md_title():
     mo.md(r"""
     #️Sparsity Exploration
     """)
     return
 
 
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## 1. Input Image
+    """)
+    return
+
+
 @app.cell
-def cell_image_ui():
+def ui_in_image():
     url_input = mo.ui.text(
         value="https://picsum.photos/1500/1000",
         kind="url",
@@ -61,308 +69,292 @@ def cell_image_ui():
 
 
 @app.cell
-def cell_get_image(load_image, url_input):
+def compute_get_image(load_image, url_input):
     load_image
 
     def get_image(url):
         with urllib.request.urlopen(url) as response:
             return Image.open(io.BytesIO(response.read()))
 
-    image = get_image(url_input.value)
-    rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.
-    return image, rgb
+    image_rgb = np.asarray(get_image(url_input.value).convert("RGB"), dtype=np.float32) / 255.0
+    return (image_rgb,)
 
 
 @app.cell
-def cell_plot_image(image):
-    mo.image(image)
+def ui_out_image(image_rgb):
+    mo.image(image_rgb)
     return
 
 
-@app.cell
-def cell_transform_options():
-    class Transform:
-        """A 2D analysis/synthesis transform over spatial axes (0, 1).
-
-        Subclasses implement forward/backward; everything else operates on a
-        coefficient array of the same shape as the image, so the pipeline is
-        uniform across FFT/DCT/DWT and works for grayscale (H, W) or color
-        (H, W, C) (the channel axis rides along as a batch dimension).
-        """
-
-        def forward(self, img):
-            raise NotImplementedError
-
-        def backward(self, coeffs):
-            raise NotImplementedError
-
-        def display(self, mag):
-            # how to arrange coefficient magnitudes for viewing
-            return mag
-
-        def basis_image(self, shape, index):
-            # a basis vector is the inverse transform of a single unit coefficient
-            e = np.zeros(shape)
-            e[index] = 1.0
-            return self.backward(e).real
-
-        def basis_indices(self, shape, k):
-            # lowest-frequency k x k block of coefficient space
-            return [(i, j) for i in range(k) for j in range(k)]
-
-        def fresh(self):
-            # stateless clone with the same config (used by the basis grid so
-            # priming layout state never touches the pipeline's transform)
-            return type(self)()
-
-
-    class FFT(Transform):
-        def forward(self, img):
-            return fft2(img, axes=(0, 1), norm="ortho")
-
-        def backward(self, coeffs):
-            return ifft2(coeffs, axes=(0, 1), norm="ortho")
-
-        def display(self, mag):
-            # center the spectrum so low frequencies sit in the middle
-            return fftshift(mag, axes=(0, 1))
-
-
-    class DCT(Transform):
-        def forward(self, img):
-            return dctn(img, axes=(0, 1), norm="ortho")
-
-        def backward(self, coeffs):
-            return idctn(coeffs, axes=(0, 1), norm="ortho")
-
-
-    class DWT(Transform):
-        # level fixed at 2: the deepest non-redundant (orthonormal) depth for the
-        # default 1500x1000 image. TODO: derive from image size so dyadic-sized
-        # inputs can use deeper wavelets without leaking energy.
-        def __init__(self, wavelet="db4", mode="periodization", level=2):
-            self.wavelet = wavelet
-            self.mode = mode
-            self.level = level
-            self._layout = None  # forward stashes the coeff layout for backward
-
-        def forward(self, img):
-            coeffs = pywt.wavedec2(
-                img, self.wavelet, mode=self.mode, level=self.level, axes=(0, 1)
-            )
-            arr, self._layout = pywt.coeffs_to_array(coeffs, axes=(0, 1))
-            return arr
-
-        def backward(self, arr):
-            coeffs = pywt.array_to_coeffs(arr, self._layout, output_format="wavedec2")
-            return pywt.waverec2(coeffs, self.wavelet, mode=self.mode, axes=(0, 1))
-
-        def basis_indices(self, shape, k):
-            # spread across the coeff array so the grid spans coarse -> fine scales
-            rows = np.linspace(0, shape[0] - 1, k).round().astype(int)
-            cols = np.linspace(0, shape[1] - 1, k).round().astype(int)
-            return [(int(r), int(c)) for r in rows for c in cols]
-
-        def fresh(self):
-            return DWT(self.wavelet, self.mode, self.level)
-
-
-    transforms = {
-        "FFT": FFT(),
-        "DCT": DCT(),
-        "DWT": DWT(),
-    }
-
-
-    def plot_transform_space(coeffs, transform, colorspace):
-        view = colorspace.coeff_view(transform.display(coeffs))
-        view_log = np.log1p(view)
-        vmin, vmax = np.percentile(view_log, [0.1, 99.9])
-        return mo.image(view_log, vmin=vmin, vmax=vmax)
-
-
-    return DWT, plot_transform_space, transforms
-
-
-@app.cell
-def cell_colorspace_options():
-    class ColorSpace:
-        """Reversible per-pixel color transform wrapped around the pipeline:
-        rgb -> encode -> transform/threshold/inverse -> decode -> rgb."""
-
-        def encode(self, rgb):
-            return rgb
-
-        def decode(self, arr):
-            return arr
-
-        def coeff_view(self, mag):
-            # which coefficient channels to show in the transform-space plot
-            return mag
-
-
-    class YCbCr(ColorSpace):
-        # JFIF full-range BT.601. Decorrelates luma (Y) from chroma (Cb, Cr) so a
-        # single global magnitude threshold naturally spends its budget on luma.
-        _M = np.array(
-            [[0.299, 0.587, 0.114],
-             [-0.168736, -0.331264, 0.5],
-             [0.5, -0.418688, -0.081312]],
-            dtype=np.float32,
-        )
-        _OFF = np.array([0.0, 0.5, 0.5], dtype=np.float32)
-        _MINV = np.linalg.inv(_M)
-
-        def encode(self, rgb):
-            return rgb @ self._M.T + self._OFF
-
-        def decode(self, ycc):
-            return (ycc - self._OFF) @ self._MINV.T
-
-        def coeff_view(self, mag):
-            # chroma carries little structure; show luma magnitudes only
-            return mag[..., 0]
-
-
-    color_spaces = {
-        "RGB": ColorSpace(),
-        "YCbCr": YCbCr(),
-    }
-    return (color_spaces,)
-
-
-@app.cell
-def cell_transform_ui(transforms):
-    transform_choice = mo.ui.dropdown(
-        options=list(transforms),
-        value="FFT",
-        label="Transform",
-    )
-    transform_choice
-    return (transform_choice,)
-
-
-@app.cell
-def cell_wavelet_ui():
-    wavelet_choice = mo.ui.dropdown(
-        options=["db4", "sym4", "haar"],
-        value="db4",
-        label="Wavelet",
-    )
-    return (wavelet_choice,)
-
-
-@app.cell
-def cell_wavelet_display(transform_choice, wavelet_choice):
-    # Show the wavelet selector only when DWT is the active transform.
-    mo.stop(transform_choice.value != "DWT", mo.md(""))
-    wavelet_choice
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## 2. Image Transformation
+    """)
     return
 
 
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### 1. Color Space
+    """)
+    return
+
+
+@app.class_definition
+class ColorSpace:
+    def encode(self, arr):
+        return NotImplementedError
+
+    def decode(self, arr):
+        return NotImplementedError
+
+    def coeff_view(self, arr):
+        return NotImplementedError
+
+
+@app.class_definition
+class RGB(ColorSpace):
+    def encode(self, arr):
+        return arr
+
+    def decode(self, arr):
+        return arr
+
+    def coeff_view(self, arr):
+        return arr
+
+
+@app.class_definition
+class YCbCr(ColorSpace):
+    # JFIF full-range BT.601. Decorrelates luma (Y) from chroma (Cb, Cr) so a
+    # single global magnitude threshold naturally spends its budget on luma.
+    _M = np.array(
+        [
+            [0.299, 0.587, 0.114],
+            [-0.168736, -0.331264, 0.5],
+            [0.5, -0.418688, -0.081312],
+        ],
+        dtype=np.float32,
+    )
+    _OFF = np.array([0.0, 0.5, 0.5], dtype=np.float32)
+    _MINV = np.linalg.inv(_M)
+
+    def encode(self, rgb):
+        return rgb @ self._M.T + self._OFF
+
+    def decode(self, ycc):
+        return (ycc - self._OFF) @ self._MINV.T
+
+    def coeff_view(self, arr):
+        return arr[0]
+
+
 @app.cell
-def cell_colorspace_ui(color_spaces):
-    color_space_choice = mo.ui.dropdown(
-        options=list(color_spaces),
+def ui_in_color_space():
+    color_space_choice = mo.ui.tabs(
+        tabs={
+            "RGB": mo.md(""),
+            "YCbCr": mo.md(""),
+        },
         value="RGB",
-        label="Color space",
+        label="Color Space",
     )
     color_space_choice
     return (color_space_choice,)
 
 
 @app.cell
-def cell_transform_image(
-    DWT,
-    color_space_choice,
-    color_spaces,
-    rgb,
+def compute_color_space(color_space_choice, image_rgb):
+    color_spaces = {
+        "RGB": RGB(),
+        "YCbCr": YCbCr(),
+    }
+    color_space = color_spaces[color_space_choice.value]
+
+    image_color_space = color_space.encode(image_rgb)
+    return color_space, image_color_space
+
+
+@app.cell
+def ui_out_color_space():
+    # TODO: Display the three channels
+    # mo.hstack([
+    # mo.image(image_color_space[:,:,0]),
+    # mo.image(image_color_space[:,:,1]),
+    # mo.image(image_color_space[:,:,2]),
+    # ])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### 2. Frequency Space
+    """)
+    return
+
+
+@app.class_definition
+class Transform:
+    def forward(self, img):
+        raise NotImplementedError
+
+    def backward(self, coeffs):
+        raise NotImplementedError
+
+
+@app.class_definition
+class FFT(Transform):
+    def forward(self, img):
+        return fftshift(fft2(img, axes=(0, 1), norm="ortho"), axes=(0, 1))
+
+    def backward(self, coeffs):
+        return ifft2(ifftshift(coeffs, axes=(0, 1)), axes=(0, 1), norm="ortho")
+
+
+@app.class_definition
+class DCT(Transform):
+    def forward(self, img):
+        return dctn(img, axes=(0, 1), norm="ortho")
+
+    def backward(self, coeffs):
+        return idctn(coeffs, axes=(0, 1), norm="ortho")
+
+
+@app.class_definition
+class DWT(Transform):
+    # level=2 fixed: deepest orthonormal depth for 1500x1000 image.
+    # TODO: derive from image size so dyadic-sized
+    # inputs can use deeper wavelets without leaking energy.
+
+    def __init__(self, wavelet="db4", mode="periodization", level=2):
+        self.wavelet = wavelet
+        self.mode = mode
+        self.level = level
+        self._layout = None  # forward stashes the coeff layout for backward
+
+    def forward(self, img):
+        coeffs = pywt.wavedec2(img, self.wavelet, mode=self.mode, level=self.level, axes=(0, 1))
+        arr, self._layout = pywt.coeffs_to_array(coeffs, axes=(0, 1))
+        return arr
+
+    def backward(self, arr):
+        coeffs = pywt.array_to_coeffs(arr, self._layout, output_format="wavedec2")
+        return pywt.waverec2(coeffs, self.wavelet, mode=self.mode, axes=(0, 1))
+
+
+@app.cell
+def ui_in_controls():
+    wavelet_choice = mo.ui.dropdown(
+        options=["haar", "db4", "sym4"],
+        value="haar",
+        label="Wavelet",
+    )
+
+    transform_choice = mo.ui.tabs(
+        tabs={
+            "FFT": mo.md(""),
+            "DCT": mo.md(""),
+            "DWT": wavelet_choice,
+        },
+        value="FFT",
+        label="Transform",
+    )
+
+    transform_choice
+    return transform_choice, wavelet_choice
+
+
+@app.cell
+def compute_transform_image(
+    image_color_space,
     transform_choice,
-    transforms,
     wavelet_choice,
 ):
+    transforms = {
+        "FFT": FFT(),
+        "DCT": DCT(),
+        "DWT": DWT(wavelet=wavelet_choice.value),
+    }
     transform = transforms[transform_choice.value]
-    if transform_choice.value == "DWT":
-        transform = DWT(wavelet=wavelet_choice.value)
-    colorspace = color_spaces[color_space_choice.value]
 
-    # Encode into the working color space, then into a sparse coefficient space
-    source = colorspace.encode(rgb)
-    y = transform.forward(source)
+    y = transform.forward(image_color_space)
     y_mag = np.abs(y)
-    return colorspace, transform, y, y_mag
+    return transform, y, y_mag
+
+
+@app.function
+def plot_transform_space(coeffs):
+    view_log = np.log1p(coeffs)
+    vmin, vmax = np.percentile(view_log, [0.1, 99.9])
+    return mo.image(view_log, vmin=vmin, vmax=vmax)
 
 
 @app.cell
-def plot_transform(colorspace, plot_transform_space, transform, y_mag):
-    plot_transform_space(y_mag, transform, colorspace)
+def ui_out_plot_transform(y_mag):
+    plot_transform_space(y_mag)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## 3. Sparse Thresholding
+    """)
     return
 
 
 @app.cell
-def cell_basis_grid(transform):
-    # Basis vectors of the selected transform: inverse-transform of each unit
-    # coefficient, cropped to the function's support, shown as a K x K montage.
-    # Cropping is a no-op for global bases (FFT/DCT) and zooms into the localized
-    # DWT wavelets so their shape is visible. A fresh instance is used so priming
-    # the DWT layout doesn't disturb the pipeline's transform.
-    _N, _K = 64, 8
-    _t = transform.fresh()  # same config, no shared state
-    _t.forward(np.zeros((_N, _N), dtype=np.float32))
-
-
-    def _crop_to_support(img, pad=2):
-        mag = np.abs(img)
-        if mag.max() == 0:
-            return img
-        _ys, _xs = np.where(mag > 0.02 * mag.max())
-        _y0, _y1 = max(_ys.min() - pad, 0), min(_ys.max() + 1 + pad, img.shape[0])
-        _x0, _x1 = max(_xs.min() - pad, 0), min(_xs.max() + 1 + pad, img.shape[1])
-        return img[_y0:_y1, _x0:_x1]
-
-
-    _gap = 1
-    _side = _K * _N + (_K + 1) * _gap
-    _canvas = np.full((_side, _side), 0.15)
-    for _n, _idx in enumerate(_t.basis_indices((_N, _N), _K)):
-        _img = _crop_to_support(_t.basis_image((_N, _N), _idx))
-        _lo, _hi = float(_img.min()), float(_img.max())
-        _tile = (_img - _lo) / (_hi - _lo) if _hi > _lo else np.full_like(_img, 0.5)
-        _tile = (
-            np.asarray(
-                Image.fromarray((_tile * 255).astype(np.uint8)).resize((_N, _N), Image.NEAREST)
-            )
-            / 255.0
-        )
-        _r, _c = divmod(_n, _K)
-        _y = _gap + _r * (_N + _gap)
-        _x = _gap + _c * (_N + _gap)
-        _canvas[_y:_y + _N, _x:_x + _N] = _tile
-    mo.accordion({"Transform basis vectors": mo.image(_canvas, width=520)})
-    return
-
-
-@app.cell
-def cell_sort_mags(y_mag):
+def compute_sort_mags(y_mag):
     # Coefficient magnitudes sorted high->low, with cumulative energy.
+    sorted_mag = np.sort(y_mag.ravel())[::-1]
+    dist_total = sorted_mag.size
+    cum_energy = np.cumsum(sorted_mag.astype(np.float64) ** 2)
+    energy_frac = cum_energy / cum_energy[-1]  # fraction of total energy in the top-k
+    return cum_energy, dist_total, energy_frac, sorted_mag
+
+
+@app.function
+def plot_distribution(sorted_mag, energy_frac, threshold, kept_count):
     def downsample_geom(values, n=3000):
         # Log-spaced sample of indices into a 1-D array (keeps head detail on log-x).
         idx = np.unique(np.round(np.geomspace(1, values.size, n)).astype(int)) - 1
         return idx, values[idx]
 
+    rank, mag = downsample_geom(sorted_mag)
+    efrac = energy_frac[rank]
+    x = rank + 1  # 1-based ranks so the log x-axis can show the head
 
-    sorted_mag = np.sort(y_mag.ravel())[::-1]
-    dist_total = sorted_mag.size
-    cum_energy = np.cumsum(sorted_mag.astype(np.float64) ** 2)
-    energy_frac = cum_energy / cum_energy[-1]  # fraction of total energy in the top-k
+    p_mag = bk.figure(
+        height=230,
+        sizing_mode="stretch_width",
+        x_axis_type="log",
+        y_axis_type="log",
+        y_axis_label="|coefficient|",
+    )
+    p_mag.line(x, mag, line_width=2, color="steelblue")
+    p_mag.hspan(threshold, line_dash="dashed", line_color="red")
+    p_mag.vspan(kept_count, line_dash="dashed", line_color="green")
 
-    dist_rank, dist_mag = downsample_geom(sorted_mag)
-    dist_efrac = energy_frac[dist_rank]
-    return cum_energy, dist_efrac, dist_mag, dist_rank, dist_total, energy_frac
+    p_energy = bk.figure(
+        height=180,
+        sizing_mode="stretch_width",
+        x_axis_type="log",
+        x_range=p_mag.x_range,
+        x_axis_label="coefficient rank (descending)",
+        y_axis_label="cumulative energy",
+    )
+    p_energy.y_range = Range1d(start=0, end=1.02)
+    p_energy.line(x, efrac, line_width=2, color="orange")
+    p_energy.vspan(kept_count, line_dash="dashed", line_color="green")
+
+    return mo.as_html(column(p_mag, p_energy, sizing_mode="stretch_width"))
 
 
 @app.cell
-def cell_keep_pct_ui():
+def ui_in_keep_pct():
     keep_pct = mo.ui.slider(
         steps=np.unique([np.arange(1, 11) / scale for scale in [10, 1, 0.1]]).tolist(),
         value=5,
@@ -376,7 +368,13 @@ def cell_keep_pct_ui():
 
 
 @app.cell
-def cell_threshold(cum_energy, keep_pct, y, y_mag):
+def ui_out_plot_distribution(energy_frac, kept_count, sorted_mag, threshold):
+    plot_distribution(sorted_mag, energy_frac, threshold, kept_count)
+    return
+
+
+@app.cell
+def compute_threshold(cum_energy, keep_pct, y, y_mag):
     # Keep only the largest-magnitude coefficients (top keep_pct%).
     threshold = float(np.percentile(y_mag, 100 - keep_pct.value))
 
@@ -390,7 +388,7 @@ def cell_threshold(cum_energy, keep_pct, y, y_mag):
 
 
 @app.cell
-def cell_energy_readout(dist_total, kept_count, kept_energy_frac, threshold):
+def ui_out_energy_readout(dist_total, kept_count, kept_energy_frac, threshold):
     mo.hstack(
         [
             mo.stat(f"{kept_count / dist_total:.2%}", label="coefficients kept"),
@@ -404,10 +402,9 @@ def cell_energy_readout(dist_total, kept_count, kept_energy_frac, threshold):
 
 
 @app.cell
-def cell_compaction(dist_total, energy_frac):
+def ui_out_compaction(dist_total, energy_frac):
     def _coeffs_for_energy(target):
         return (int(np.searchsorted(energy_frac, target)) + 1) / dist_total
-
 
     mo.hstack(
         [
@@ -422,22 +419,25 @@ def cell_compaction(dist_total, energy_frac):
 
 
 @app.cell
-def cell_plot_threshold(
-    colorspace,
-    plot_transform_space,
-    transform,
-    y_sparse_mag,
-):
-    plot_transform_space(y_sparse_mag, transform, colorspace)
+def ui_out_plot_threshold(y_sparse_mag):
+    plot_transform_space(y_sparse_mag)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## 4. Inverse Transform Reconstruction
+    """)
     return
 
 
 @app.cell
-def cell_inverse_transform(colorspace, transform, y_sparse):
+def compute_inverse_transform(color_space, transform, y_sparse):
     # Reconstruct: invert the transform, decode back to RGB, clip for display.
     # (.real: the inverse FFT returns complex; DCT/DWT are already real.)
     reconstruct = np.clip(
-        colorspace.decode(
+        color_space.decode(
             transform.backward(y_sparse).real,
         ),
         0.0,
@@ -447,45 +447,78 @@ def cell_inverse_transform(colorspace, transform, y_sparse):
 
 
 @app.cell
-def cell_plot_reconstruction(reconstruct):
+def ui_out_reconstruction(reconstruct):
     mo.image(reconstruct)
     return
 
 
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## 5. Additional Context
+    """)
+    return
+
+
+@app.function
+def plot_basis_grid(transform, n=64, k=8):
+    # Basis vectors of the transform: inverse-transform each unit coefficient,
+    # cropped to its support, as a K x K montage. Cropping is a no-op for the
+    # global FFT/DCT bases and zooms into the localized DWT wavelets so their
+    # shape is visible. Work on a deep copy so priming the DWT layout never
+    # touches the pipeline's transform.
+    t = copy.deepcopy(transform)
+    t.forward(np.zeros((n, n), dtype=np.float32))
+
+    if isinstance(transform, DWT):
+        # spread across the coeff array so the grid spans coarse -> fine scales
+        rows = np.linspace(0, n - 1, k).round().astype(int)
+        cols = np.linspace(0, n - 1, k).round().astype(int)
+        indices = [(int(r), int(c)) for r in rows for c in cols]
+    elif isinstance(transform, FFT):
+        # lowest-frequency k x k block, centered (FFT puts DC at the middle)
+        c = n // 2
+        indices = [(c + i, c + j) for i in range(k) for j in range(k)]
+    else:
+        # lowest-frequency k x k block of coefficient space (DCT: DC at corner)
+        indices = [(i, j) for i in range(k) for j in range(k)]
+
+    def basis_image(index):
+        # a basis vector is the inverse transform of a single unit coefficient
+        e = np.zeros((n, n))
+        e[index] = 1.0
+        return t.backward(e).real
+
+    def crop_to_support(img, pad=2):
+        mag = np.abs(img)
+        if mag.max() == 0:
+            return img
+        ys, xs = np.where(mag > 0.02 * mag.max())
+        y0, y1 = max(ys.min() - pad, 0), min(ys.max() + 1 + pad, img.shape[0])
+        x0, x1 = max(xs.min() - pad, 0), min(xs.max() + 1 + pad, img.shape[1])
+        return img[y0:y1, x0:x1]
+
+    gap = 1
+    side = k * n + (k + 1) * gap
+    canvas = np.full((side, side), 0.15)
+    for pos, index in enumerate(indices):
+        img = crop_to_support(basis_image(index))
+        lo, hi = float(img.min()), float(img.max())
+        tile = (img - lo) / (hi - lo) if hi > lo else np.full_like(img, 0.5)
+        tile = (
+            np.asarray(Image.fromarray((tile * 255).astype(np.uint8)).resize((n, n), Image.NEAREST))
+            / 255.0
+        )
+        r, c = divmod(pos, k)
+        y = gap + r * (n + gap)
+        x = gap + c * (n + gap)
+        canvas[y : y + n, x : x + n] = tile
+    return mo.accordion({"Transform basis vectors": mo.image(canvas, width=520)})
+
+
 @app.cell
-def cell_plot_distribution(
-    dist_efrac,
-    dist_mag,
-    dist_rank,
-    kept_count,
-    threshold,
-):
-    _x = dist_rank + 1  # 1-based ranks so the log x-axis can show the head
-
-    _p_mag = bk.figure(
-        height=230,
-        sizing_mode="stretch_width",
-        x_axis_type="log",
-        y_axis_type="log",
-        y_axis_label="|coefficient|",
-    )
-    _p_mag.line(_x, dist_mag, line_width=2, color="steelblue")
-    _p_mag.hspan(threshold, line_dash="dashed", line_color="red")
-    _p_mag.vspan(kept_count, line_dash="dashed", line_color="green")
-
-    _p_energy = bk.figure(
-        height=180,
-        sizing_mode="stretch_width",
-        x_axis_type="log",
-        x_range=_p_mag.x_range,
-        x_axis_label="coefficient rank (descending)",
-        y_axis_label="cumulative energy",
-    )
-    _p_energy.y_range = Range1d(start=0, end=1.02)
-    _p_energy.line(_x, dist_efrac, line_width=2, color="orange")
-    _p_energy.vspan(kept_count, line_dash="dashed", line_color="green")
-
-    mo.as_html(column(_p_mag, _p_energy, sizing_mode="stretch_width"))
+def ui_out_basis_grid(transform):
+    plot_basis_grid(transform)
     return
 
 

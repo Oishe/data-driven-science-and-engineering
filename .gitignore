@@ -122,6 +122,9 @@ cython_debug/
 .claude/
 .serena
 
+# VSCode
+.vscode/
+
 # Examples
 .examples/
 
@@ -132,4 +135,7 @@ _site/
 __marimo__
 test_output
 
-
+# local depgraph output
+depgraph.html
+depgraph.py
+.playwright-mcp/
