@@ -113,9 +113,22 @@ class ColorSpace:
     def coeff_view(self, arr):
         return NotImplementedError
 
+    def channel_views(self, arr):
+        # One [w,h,3] RGB image per channel, colored so the channel reads correctly.
+        return NotImplementedError
+
+    def channel_colors(self):
+        # RGB tint per channel: the direction it pushes RGB, peak-normalized.
+        base = self.decode(np.zeros(3, np.float32))
+        cols = np.stack([self.decode(e) - base for e in np.eye(3, dtype=np.float32)])
+        cols = np.clip(cols, 0, None)
+        return cols / cols.max(axis=1, keepdims=True)
+
 
 @app.class_definition
 class RGB(ColorSpace):
+    channels = ("R", "G", "B")
+
     def encode(self, arr):
         return arr
 
@@ -125,9 +138,14 @@ class RGB(ColorSpace):
     def coeff_view(self, arr):
         return arr
 
+    def channel_views(self, arr):
+        return [arr * (np.arange(3) == i) for i in range(3)]
+
 
 @app.class_definition
 class YCbCr(ColorSpace):
+    channels = ("Y", "Cb", "Cr")
+
     # JFIF full-range BT.601. Decorrelates luma (Y) from chroma (Cb, Cr) so a
     # single global magnitude threshold naturally spends its budget on luma.
     _M = np.array(
@@ -149,6 +167,13 @@ class YCbCr(ColorSpace):
 
     def coeff_view(self, arr):
         return arr[0]
+
+    def channel_views(self, ycc):
+        def view(i):
+            v = np.full_like(ycc, 0.5)  # neutral luma + chroma
+            v[..., i] = ycc[..., i]
+            return np.clip(self.decode(v), 0, 1)
+        return [view(i) for i in range(3)]
 
 
 @app.cell
@@ -178,13 +203,8 @@ def compute_color_space(color_space_choice, image_rgb):
 
 
 @app.cell
-def ui_out_color_space():
-    # TODO: Display the three channels
-    # mo.hstack([
-    # mo.image(image_color_space[:,:,0]),
-    # mo.image(image_color_space[:,:,1]),
-    # mo.image(image_color_space[:,:,2]),
-    # ])
+def ui_out_color_space(color_space, image_color_space):
+    plot_channel_strip(color_space.channel_views(image_color_space), color_space.channels)
     return
 
 
@@ -287,14 +307,43 @@ def compute_transform_image(
 
 @app.function
 def plot_transform_space(coeffs):
-    view_log = np.log1p(coeffs)
+    view_log = np.log1p(coeffs.sum(axis=-1))
     vmin, vmax = np.percentile(view_log, [0.1, 99.9])
     return mo.image(view_log, vmin=vmin, vmax=vmax)
+
+
+@app.function
+def plot_channel_strip(images, names):
+    # Shared layout: one labeled, colored image per channel, side by side.
+    return mo.hstack(
+        [
+            mo.vstack([mo.md(f"**{_name}**"), mo.image(_img)], align="center")
+            for _name, _img in zip(names, images)
+        ]
+    )
 
 
 @app.cell
 def ui_out_plot_transform(y_mag):
     plot_transform_space(y_mag)
+    return
+
+
+@app.function
+def plot_all_transform_spaces(coeffs, color_space):
+    colors = color_space.channel_colors()
+    images = []
+    for _i in range(len(color_space.channels)):
+        _chan = np.log1p(coeffs[..., _i])
+        _vmin, _vmax = np.percentile(_chan, [0.1, 99.9])
+        _norm = np.clip((_chan - _vmin) / (_vmax - _vmin), 0, 1)
+        images.append(_norm[..., None] * colors[_i])
+    return plot_channel_strip(images, color_space.channels)
+
+
+@app.cell
+def ui_out_plot_all_transforms(color_space, y_mag):
+    plot_all_transform_spaces(y_mag, color_space)
     return
 
 
@@ -402,6 +451,20 @@ def ui_out_energy_readout(dist_total, kept_count, kept_energy_frac, threshold):
 
 
 @app.cell
+def ui_out_channel_keep(color_space, threshold, y_mag):
+    _kept = (y_mag >= threshold).mean(axis=(0, 1))  # fraction of each channel's coeffs kept
+    mo.hstack(
+        [
+            mo.stat(f"{_frac:.2%}", label=f"{_name} kept")
+            for _name, _frac in zip(color_space.channels, _kept)
+        ],
+        justify="start",
+        gap=2,
+    )
+    return
+
+
+@app.cell
 def ui_out_compaction(dist_total, energy_frac):
     def _coeffs_for_energy(target):
         return (int(np.searchsorted(energy_frac, target)) + 1) / dist_total
@@ -421,6 +484,12 @@ def ui_out_compaction(dist_total, energy_frac):
 @app.cell
 def ui_out_plot_threshold(y_sparse_mag):
     plot_transform_space(y_sparse_mag)
+    return
+
+
+@app.cell
+def ui_out_plot_all_thresholds(color_space, y_sparse_mag):
+    plot_all_transform_spaces(y_sparse_mag, color_space)
     return
 
 
