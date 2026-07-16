@@ -139,3 +139,9 @@ test_output
 depgraph.html
 depgraph.py
 .playwright-mcp/
+
+# Local-only: planning docs, agent instructions, WIP notebooks & reference
+plan/
+local/
+CLAUDE.md
+CONVENTIONS.md
