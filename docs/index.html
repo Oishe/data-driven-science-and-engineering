@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data-Driven Science &amp; Engineering: Interactive Notebooks</title>
+<meta name="description" content="Explorable explanations in data-driven science and engineering. Interactive marimo notebooks that run in your browser via WebAssembly, with no install and no server.">
+<meta property="og:title" content="Data-Driven Science &amp; Engineering: Interactive Notebooks">
+<meta property="og:description" content="Explorable explanations that run in your browser via WebAssembly.">
+<meta property="og:type" content="website">
+<!-- A decaying coefficient spectrum: the shape every chapter here is about. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f5fd0'/%3E%3Cg fill='%23fff'%3E%3Crect x='6' y='8' width='3' height='18' rx='1.5'/%3E%3Crect x='12' y='14' width='3' height='12' rx='1.5'/%3E%3Crect x='18' y='20' width='3' height='6' rx='1.5'/%3E%3Crect x='24' y='23' width='3' height='3' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-elev: #f7f8fa;
+  --fg: #16181d;
+  --fg-muted: #5c626e;
+  --fg-faint: #878d99;
+  --border: #e3e6ec;
+  --accent: #2f5fd0;
+  --accent-fg: #ffffff;
+  --thumb-a: #e8edf9;
+  --thumb-b: #f4eef7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1014;
+    --bg-elev: #16191f;
+    --fg: #e8eaee;
+    --fg-muted: #a0a6b2;
+    --fg-faint: #6e7480;
+    --border: #262b33;
+    --accent: #6d94f0;
+    --accent-fg: #0e1014;
+    --thumb-a: #1a2133;
+    --thumb-b: #241d30;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+
+.wrap { max-width: 940px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- hero ---------- */
+header { padding: 84px 0 56px; border-bottom: 1px solid var(--border); }
+.eyebrow {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--fg-faint); margin: 0 0 18px;
+}
+h1 {
+  margin: 0 0 18px;
+  font-size: clamp(2.1rem, 5.5vw, 3.1rem);
+  line-height: 1.12; letter-spacing: -0.022em; font-weight: 650;
+}
+.tagline {
+  margin: 0 0 28px; max-width: 62ch;
+  font-size: clamp(1.05rem, 2.2vw, 1.22rem);
+  color: var(--fg-muted);
+}
+.facts { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.facts li {
+  font-size: 13px; color: var(--fg-muted);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 13px; background: var(--bg-elev);
+}
+
+/* ---------- modes ---------- */
+.modes { padding: 44px 0 8px; }
+.modes h2, .chapters h2 {
+  font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--fg-faint); font-weight: 600; margin: 0 0 20px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.mode-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.mode {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px 20px; background: var(--bg-elev);
+}
+.mode h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 620; }
+.mode p { margin: 0; font-size: 14.5px; color: var(--fg-muted); line-height: 1.55; }
+
+/* ---------- chapter cards ---------- */
+.chapters { padding: 48px 0 8px; }
+.card {
+  display: grid; grid-template-columns: 260px 1fr; gap: 28px;
+  align-items: center;
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 22px; margin-bottom: 22px; background: var(--bg-elev);
+}
+/* Thumbnail slot. To use a real screenshot, drop a PNG at docs/assets/<name>.png
+   and replace the <div class="thumb"> with:
+   <img class="thumb" src="assets/<name>.png" alt="Screenshot of the ... playground"> */
+.thumb {
+  aspect-ratio: 16 / 10; border-radius: 8px; border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--thumb-a), var(--thumb-b));
+  display: flex; align-items: center; justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; letter-spacing: .08em; color: var(--fg-faint);
+  width: 100%; object-fit: cover;
+}
+.chapter-num {
+  margin: 0 0 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.card h3 { margin: 0 0 8px; font-size: 1.3rem; font-weight: 640; letter-spacing: -0.012em; }
+.card p { margin: 0 0 18px; color: var(--fg-muted); font-size: 15.5px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  display: inline-block; text-decoration: none; font-size: 14.5px; font-weight: 550;
+  padding: 8px 18px; border-radius: 7px; border: 1px solid transparent;
+  transition: opacity .12s ease, background-color .12s ease;
+}
+.btn-primary { background: var(--accent); color: var(--accent-fg); }
+.btn-primary:hover { opacity: .88; }
+.btn-secondary { border-color: var(--border); color: var(--fg); background: var(--bg); }
+.btn-secondary:hover { background: var(--bg-elev); }
+
+.roadmap {
+  margin: 4px 0 0; padding: 16px 20px;
+  border: 1px dashed var(--border); border-radius: 10px;
+  color: var(--fg-muted); font-size: 14.5px;
+}
+
+/* ---------- footer ---------- */
+footer {
+  margin-top: 56px; padding: 28px 0 56px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-faint); font-size: 14px;
+}
+footer p { margin: 0 0 6px; }
+
+@media (max-width: 720px) {
+  header { padding: 56px 0 40px; }
+  .mode-grid { grid-template-columns: 1fr; }
+  .card { grid-template-columns: 1fr; gap: 18px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Explorable explanations</p>
+    <h1>Data-Driven Science &amp; Engineering</h1>
+    <p class="tagline">
+      Interactive notebooks on the mathematics behind modern data analysis.
+      Each one is a short chapter you can read, then take apart yourself.
+    </p>
+    <ul class="facts">
+      <li>Runs in your browser</li>
+      <li>WebAssembly · no install, no server</li>
+      <li>Built with marimo</li>
+    </ul>
+  </div>
+</header>
+
+<main>
+  <section class="modes wrap">
+    <h2>Two ways to read</h2>
+    <div class="mode-grid">
+      <div class="mode">
+        <h3>Launch the app</h3>
+        <p>Code hidden. You get the controls and the figures. Drag a slider and watch the mathematics respond.</p>
+      </div>
+      <div class="mode">
+        <h3>Read the notebook</h3>
+        <p>Each function on show, beside the derivation it implements. Read it top to bottom, then reproduce it yourself.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="chapters wrap">
+    <h2>Chapters</h2>
+
+    <article class="card">
+      <div class="thumb">screenshot</div>
+      <div>
+        <p class="chapter-num">Chapter 01</p>
+        <h3>A Signal Is a Vector</h3>
+        <p>
+          Start here. One dimension, small enough to see every number. A signal is
+          a point in ℝⁿ, and compression is nothing more than choosing better
+          coordinates. Watch a smooth signal go from 64 dense samples to a handful of
+          Fourier coefficients.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="app/01_signal_is_a_vector/">Launch the app</a>
+          <a class="btn btn-secondary" href="notebook/01_signal_is_a_vector/">Read the notebook</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="thumb">screenshot</div>
+      <div>
+        <p class="chapter-num">Chapter 02</p>
+        <h3>Compression via Sparsity</h3>
+        <p>
+          The same move in two dimensions: dense pixel space to sparse transform space,
+          the idea behind JPEG, JPEG 2000, and most lossy image compression. Load any
+          image, choose a basis (FFT · DCT · wavelet), then drag the keep-% and watch
+          the reconstruction, the coefficient field, and PSNR update together.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="app/02_compression_via_sparsity/">Launch the app</a>
+          <a class="btn btn-secondary" href="notebook/02_compression_via_sparsity/">Read the notebook</a>
+        </div>
+      </div>
+    </article>
+
+    <p class="roadmap">
+      More chapters in progress, following the arc of
+      <em>Data-Driven Science and Engineering</em>: singular value decomposition,
+      Fourier and wavelet analysis, regression and model selection, and dynamical systems.
+    </p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      Source and build pipeline on <a href="https://github.com/Oishe/data-driven-science-and-engineering">GitHub</a>.
+    </p>
+    <p>
+      Inspired by <em>Data-Driven Science and Engineering: Machine Learning, Dynamical
+      Systems, and Control</em> by Steven L. Brunton and J. Nathan Kutz.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,9 +1,14 @@
 [project]
-name = "sparsity"
+name = "data-driven-science-and-engineering"
 version = "0.1.0"
-description = "Sparsity Exploration"
+description = "Interactive marimo notebooks on data-driven science and engineering, running in the browser via WebAssembly."
 readme = "README.md"
 requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Oishe Farhan", email = "farhanoishe@gmail.com" }]
+keywords = ["marimo", "webassembly", "signal-processing", "explorable-explanations"]
+
 dependencies = [
   "marimo>=0.23.10",
   "matplotlib>=3.11.0",
@@ -13,11 +18,14 @@ dependencies = [
   "scipy>=1.18.0",
 ]
 
+[project.urls]
+Homepage = "https://oishe.github.io/data-driven-science-and-engineering/"
+Repository = "https://github.com/Oishe/data-driven-science-and-engineering"
+
 [dependency-groups]
 dev = [
   "fire>=0.7.1",
   "marimo[lsp,recommended]>=0.23.10",
-  "mkdocs-shadcn>=0.2.3",
   "mcp>=1",
   "pydantic>=2",
   "pytest>=9.1.1",
@@ -39,6 +47,9 @@ default-groups = ["dev", "extras"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.marimo.runtime]
 output_max_bytes = 10_000_000

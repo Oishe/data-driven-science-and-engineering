@@ -1,5 +1,5 @@
 # Default notebook for edit/run/check recipes.
-nb := "notebooks/sparsity.py"
+nb := "notebooks/02_compression_via_sparsity.py"
 
 # Sandbox mode. Default off; flip on with `just sandbox=--sandbox <recipe>`.
 sandbox := "--no-sandbox"
@@ -26,21 +26,28 @@ share nb=nb:
     @echo "On another device, open:  http://$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname):{{port}}"
     uv run marimo edit --sandbox --no-token --host 0.0.0.0 --port {{port}} {{nb}}
 
-# Lint + marimo formatting/pitfall checks.
+# Lint + marimo formatting/pitfall checks on one notebook.
 check nb=nb:
     uv run ruff check {{nb}}
     uv run marimo check --fix {{nb}}
 
-# Preview the landing page only (live reload; no WASM apps).
+# Non-mutating lint + tests across the repo (CI runs this exact recipe).
+check-all:
+    uv run ruff check .
+    uv run marimo check notebooks
+    uv run pytest -q
+
+# Preview the landing page only at :8000 (no WASM apps — they 404).
 serve:
-    uv run mkdocs serve
+    uv run python -m http.server -d docs 8000
 
 # Full deploy pipeline into _site/ (landing + every notebook; CI runs this too).
 build:
     #!/usr/bin/env bash
     set -euo pipefail
     rm -rf _site
-    uv run mkdocs build -d _site
+    mkdir -p _site
+    cp -R docs/. _site/
     for f in notebooks/*.py; do
         name=$(basename "$f" .py)
         uvx marimo export html-wasm --sandbox "$f" -o "_site/app/$name" --mode run --no-show-code
@@ -50,8 +57,8 @@ build:
     touch _site/.nojekyll
     test -f _site/index.html
 
-# Build the full site, then serve it exactly as deployed at localhost:8000.
-preview: build
+# Serve it exactly as deployed at localhost:8000.
+preview:
     uv run python -m http.server -d _site 8000
 
 # Agent server

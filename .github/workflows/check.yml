@@ -1,0 +1,22 @@
+name: Checks
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Lint notebooks and run tests
+        run: just check-all   # single source of truth — see ./justfile
