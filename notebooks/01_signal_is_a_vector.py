@@ -74,15 +74,6 @@ def demo_signal(n, x):
     return
 
 
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""
-    When we measure the signal, we sample its values at evenly spaced intervals.
-    In this case we are taking $n = 64$ samples.
-    """)
-    return
-
-
 @app.cell
 def demo_signal_samples(n, x):
     def plot_signal_samples(x, n):
@@ -103,7 +94,8 @@ def demo_signal_samples(n, x):
 @app.cell(hide_code=True)
 def md_signal_vector():
     mo.md(r"""
-    If we stack each of the samples into a column, the signal becomes a single vector.
+    When we measure the signal, we sample its values at evenly spaced intervals.
+    In this case we are taking $n = 64$ samples. If we stack each of the samples into a column, the signal becomes a single vector.
 
     $$
     \mathbf{x} = \begin{bmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{bmatrix} \in \mathbb{R}^{n}.
@@ -140,7 +132,7 @@ def ui_rotate():
     mo.vstack(
         [
             mo.md(
-                r"**Drag the slider** to turn the red axes and watch the vector's coordinates change — the vector itself is fixed."
+                r"**Drag the slider** to turn the red axes and watch the vector's coordinates change — the vector itself doesn't change."
             ),
             rotate,
         ]
@@ -631,6 +623,13 @@ def md_appendix():
 
 
 @app.function
+def style_signal_axes(ax):
+    ax.grid(True, alpha=0.25, linewidth=0.6)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+@app.function
 def theme(fig):
     # Transparent so marimo's light/dark theme shows through and styles the text.
     fig.patch.set_alpha(0)
@@ -638,13 +637,6 @@ def theme(fig):
         ax.patch.set_alpha(0)
     fig.tight_layout()
     return fig
-
-
-@app.function
-def style_signal_axes(ax):
-    ax.grid(True, alpha=0.25, linewidth=0.6)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
 
 
 @app.function
