@@ -29,13 +29,14 @@ Each chapter ships twice: a code-hidden **app** for exploring, and a code-visibl
 | --- | --- | --- | --- |
 | 01 | **A Signal Is a Vector**, one dimension, small enough to see every number | [Launch app ▶](https://oishe.github.io/data-driven-science-and-engineering/app/01_signal_is_a_vector/) | [Notebook 📖](https://oishe.github.io/data-driven-science-and-engineering/notebook/01_signal_is_a_vector/) |
 | 02 | **Compression via Sparsity**, the same move in 2-D, the idea behind JPEG and JPEG 2000 | [Launch app ▶](https://oishe.github.io/data-driven-science-and-engineering/app/02_compression_via_sparsity/) | [Notebook 📖](https://oishe.github.io/data-driven-science-and-engineering/notebook/02_compression_via_sparsity/) |
+| 03 | **Sparsity Exploration**, chapter 02 stripped to the controls, for a quick look with no derivation | [Launch app ▶](https://oishe.github.io/data-driven-science-and-engineering/app/03_compression_simple_app/) | [Notebook 📖](https://oishe.github.io/data-driven-science-and-engineering/notebook/03_compression_simple_app/) |
 
 More chapters are in progress, following the arc of *Data-Driven Science and Engineering:
 Machine Learning, Dynamical Systems, and Control* by Steven L. Brunton and J. Nathan Kutz:
 singular value decomposition, Fourier and wavelet analysis, regression and model selection,
 and dynamical systems.
 
-## The idea both chapters build
+## The idea these chapters build
 
 An image is *dense* in pixel space. Rotate it into an orthonormal basis (FFT, DCT, or
 wavelet) and it becomes *sparse*: a few large coefficients hold almost all the energy.
