@@ -246,22 +246,25 @@ def _(keep_pct, s, s_abs, transform):
 
 
 @app.cell
-def _(reconstructed, rgb, s_abs, s_sparse_abs):
-    mo.vstack(
-        [
-            mo.hstack(
-                [mo.image(rgb), image_transform_space(s_abs)],
-                align="center",
-                widths=[1, 1],
-            ),
-            mo.hstack(
-                [mo.image(reconstructed), image_transform_space(s_sparse_abs)],
-                align="center",
-                widths=[1, 1],
-            ),
-        ],
-        align="stretch",
-        gap=2,
+def _(rgb, s_abs):
+    # One row per cell, deliberately. Four full-resolution images in a single output
+    # exceeds marimo's default output_max_bytes, and the WASM export does not inherit
+    # the raised cap in pyproject.toml, so a combined vstack renders as an
+    # "output is too large" error on the deployed site while working fine locally.
+    mo.hstack(
+        [mo.image(rgb), image_transform_space(s_abs)],
+        align="center",
+        widths=[1, 1],
+    )
+    return
+
+
+@app.cell
+def _(reconstructed, s_sparse_abs):
+    mo.hstack(
+        [mo.image(reconstructed), image_transform_space(s_sparse_abs)],
+        align="center",
+        widths=[1, 1],
     )
     return
 

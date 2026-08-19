@@ -13,10 +13,7 @@ files on GitHub Pages.
 
 **→ [Start here: the landing page](https://oishe.github.io/data-driven-science-and-engineering/)**
 
-<!-- Hero screenshot slot. Capture a shot of the sparsity playground, save it to
-     docs/assets/hero.png, and replace this comment with:
-     ![The Compression via Sparsity playground](docs/assets/hero.png)
-     See "Screenshots" under Local development for the capture recipe. -->
+![Sparsity Exploration: an image and its full FFT spectrum above; below, the reconstruction from the largest 5% of coefficients and the thinned spectrum it came from](docs/assets/hero.png)
 
 ---
 
