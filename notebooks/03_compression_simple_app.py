@@ -63,9 +63,16 @@ def cell_get_image(load_image, url_input):
     load_image
 
 
-    def get_image(url):
+    def get_image(url, longest_side=1024):
+        # Everything downstream — transform, mask, inverse, both encodes — costs in
+        # proportion to the pixel count, and the panels below render at ~535 px.
         with urllib.request.urlopen(url) as response:
-            return Image.open(io.BytesIO(response.read()))
+            image = Image.open(io.BytesIO(response.read()))
+        if max(image.size) > longest_side:
+            scale = longest_side / max(image.size)
+            size = (round(image.width * scale), round(image.height * scale))
+            image = image.resize(size, Image.LANCZOS)
+        return image
 
 
     image = get_image(url_input.value)
@@ -161,14 +168,24 @@ def _(rgb, transform_choice, transforms):
 
     s = transform.forward(rgb)
     s_abs = np.abs(s)  # Absolute value pre-calculated
-    return s, s_abs, transform
+    s_log = np.log1p(s_abs)
+
+    # One colour scale for every coefficient panel, held fixed while the threshold
+    # moves: re-deriving percentiles per frame makes the field flicker as it empties.
+    log_span = np.percentile(s_log, [0.1, 99.9])
+    return log_span, s, s_abs, s_log, transform
 
 
 @app.function
-def image_transform_space(coeffs_abs):
-    coeffs_log = np.log1p(coeffs_abs)
-    vmin, vmax = np.percentile(coeffs_log, [0.1, 99.9])
-    return mo.image(coeffs_log, vmin=vmin, vmax=vmax)
+def to_image(values, lo, hi):
+    # Scaling here rather than letting mo.image min-max normalize keeps every panel on
+    # one scale, so brightness stays comparable as the threshold moves. compress_level=3
+    # halves the encode time for about a quarter more bytes — the right trade for
+    # something that runs on every slider step.
+    scaled = ((values - lo) * (255.0 / (hi - lo))).clip(0, 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(scaled).save(buf, format="PNG", compress_level=3)
+    return mo.image(buf)
 
 
 @app.cell
@@ -179,7 +196,7 @@ def _(s_abs):
     s_sorted = np.sort(s_abs.ravel())[::-1]
     sampled_idxs = np.unique(np.geomspace(1, s_sorted.size, 3000).round().astype(int)) - 1
     sampled_mags = s_sorted[sampled_idxs]
-    return sampled_idxs, sampled_mags
+    return s_sorted, sampled_idxs, sampled_mags
 
 
 @app.function
@@ -194,7 +211,7 @@ def theme(fig):
 
 
 @app.function
-def plot_magnitude_decay(idxs, mags, n_kept):
+def plot_magnitude_decay(idxs, mags, n_kept, n_total):
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(idxs + 1, mags, color="blue", linewidth=1.6)
     ax.axvline(
@@ -202,9 +219,13 @@ def plot_magnitude_decay(idxs, mags, n_kept):
         color="red",
         linestyle="--",
         linewidth=1.2,
+        # At rank 1 the line lands on the left spine; clipping would erase it there.
+        clip_on=False,
         label="Threshold",
     )
     ax.set_xscale("log")
+    # Pinned, so rank n sits at exactly log10(n) / log10(n_total) across the axes.
+    ax.set_xlim(1, n_total)
     ax.set_ylabel("magnitude")
     ax.set_xlabel("rank (coefficients sorted by magnitude)")
     ax.set_title("coefficient magnitudes decay over many orders", fontsize=11)
@@ -215,44 +236,60 @@ def plot_magnitude_decay(idxs, mags, n_kept):
 
 
 @app.cell
-def cell_keep_pct():
-    keep_pct = mo.ui.slider(
-        steps=np.unique([np.arange(1, 11) / scale for scale in [10, 1, 0.1]]).tolist(),
-        value=5,
-        debounce=True,
-        show_value=True,
-        full_width=True,
-        label="Keep percentage",
-    )
-    keep_pct
-    return (keep_pct,)
-
-
-@app.cell
-def _(keep_pct, s_abs, sampled_idxs, sampled_mags):
-    n_kept = round(s_abs.size * keep_pct.value / 100)
-
-    plot_magnitude_decay(sampled_idxs, sampled_mags, n_kept)
+def out_keep_readout(n_kept, rgb):
+    mo.md(f"""
+    **Keep** {100 * n_kept / rgb.size:.3g}% — top {n_kept:,} of {rgb.size:,} coefficients
+    """)
     return
 
 
 @app.cell
-def _(keep_pct, s, s_abs, transform):
-    threshold = np.percentile(s_abs, 100 - keep_pct.value)
-    s_sparse = np.where(s_abs >= threshold, s, 0.0)
-    s_sparse_abs = np.abs(s_sparse)
-    reconstructed = transform.inverse(s_sparse)
-    return reconstructed, s_sparse_abs
+def ui_keep_rank(rgb):
+    # The slider holds a rank, not a percentage: its handle moves linearly in the step
+    # index and the plot's x-axis is logarithmic in rank, so geometrically spaced steps
+    # are what keep the handle level with the threshold line. No np.unique — dropping
+    # the repeated integers at the head would collapse the first decades of rank into a
+    # linear stretch of the track. Spanning the image rather than the coefficients keeps
+    # the slider from resetting when the transform changes.
+    _ranks = np.geomspace(1, rgb.size, 601).round().astype(int).tolist()
+
+    keep_rank = mo.ui.slider(
+        steps=_ranks,
+        value=_ranks[int(np.searchsorted(_ranks, round(0.05 * rgb.size)))],
+        full_width=True,
+    )
+    keep_rank
+    return (keep_rank,)
 
 
 @app.cell
-def _(rgb, s_abs):
+def compute_keep(keep_rank):
+    n_kept = keep_rank.value
+    return (n_kept,)
+
+
+@app.cell
+def plot_decay(n_kept, rgb, sampled_idxs, sampled_mags):
+    plot_magnitude_decay(sampled_idxs, sampled_mags, n_kept, rgb.size)
+    return
+
+
+@app.cell
+def compute_sparse(n_kept, s, s_abs, s_log, s_sorted, transform):
+    keep = s_abs >= s_sorted[n_kept - 1]
+    reconstructed = transform.inverse(np.where(keep, s, 0.0))
+    kept_log = np.where(keep, s_log, 0.0)
+    return kept_log, reconstructed
+
+
+@app.cell
+def _(log_span, rgb, s_log):
     # One row per cell, deliberately. Four full-resolution images in a single output
     # exceeds marimo's default output_max_bytes, and the WASM export does not inherit
     # the raised cap in pyproject.toml, so a combined vstack renders as an
     # "output is too large" error on the deployed site while working fine locally.
     mo.hstack(
-        [mo.image(rgb), image_transform_space(s_abs)],
+        [to_image(rgb, 0.0, 1.0), to_image(s_log, *log_span)],
         align="center",
         widths=[1, 1],
     )
@@ -260,9 +297,9 @@ def _(rgb, s_abs):
 
 
 @app.cell
-def _(reconstructed, s_sparse_abs):
+def _(kept_log, log_span, reconstructed):
     mo.hstack(
-        [mo.image(reconstructed), image_transform_space(s_sparse_abs)],
+        [to_image(reconstructed, 0.0, 1.0), to_image(kept_log, *log_span)],
         align="center",
         widths=[1, 1],
     )
